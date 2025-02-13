@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import random
 import numpy as np
 from collections import deque
@@ -24,7 +25,7 @@ def load_memory(file_name='memory.pkl'):
     return memory
 
 MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
+BATCH_SIZE = 128  # Reduced batch size for better training stability
 LR = 0.002
 
 class Agent:
@@ -122,24 +123,33 @@ class Agent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        # Si el agente lleva muchos juegos sin mejorar, aumenta epsilon
+        # If the agent has not improved for a certain number of games, increase epsilon
         if self.n_games - self.last_record_game > self.stuck_threshold:
             self.epsilon = min(self.max_epsilon, self.epsilon * self.adaptive_increase_factor)
             print(f"Agent is stuck! Increasing epsilon to {self.epsilon:.4f}.")
+            self.last_record_game = self.n_games
+        else:
+            # Continue the normal epsilon decay process
+            self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_step)
 
         final_move = [0, 0, 0]
+        state_tensor = torch.tensor(state, dtype=torch.float)
+        prediction = self.model(state_tensor)
+
         if random.random() < self.epsilon:
-            move = random.randint(0, 2)
+            # Boltzmann exploration
+            probabilities = F.softmax(prediction / self.epsilon, dim=0)
+            move = torch.multinomial(probabilities, 1).item()
             final_move[move] = 1
             self.exploration_count += 1
             self.global_exp += 1
         else:
-            state_tensor = torch.tensor(state, dtype=torch.float)
-            prediction = self.model(state_tensor)
+            # Exploitation
             move = torch.argmax(prediction).item()
             final_move[move] = 1
             self.exploitation_count += 1
             self.global_expl += 1
+
         return final_move
 
 def train():
@@ -177,9 +187,10 @@ def train():
             if score > record:
                 record = score
                 agent.model.save()
-                agent.last_record_game = agent.n_games
+                agent.last_record_game = agent.n_games  # Update last_record_game here
+                print(f"New record achieved! Resetting epsilon to {agent.final_epsilon:.4f}.")
 
-            # Almacena resultados del juego actual
+            # Store results of the current game
             timestamp = datetime.now()
             agent.game_results.append({
                 'game': agent.n_games,
@@ -201,7 +212,7 @@ def train():
             ]
             print(tabulate(table_data, tablefmt="fancy_grid"))
 
-            # Reinicia contadores para el siguiente juego
+            # Reset counters for the next game
             agent.exploration_count = 0
             agent.exploitation_count = 0
 
@@ -213,9 +224,6 @@ def train():
             save_plot = (agent.n_games % 100 == 0)
             plot(plot_scores, plot_mean_scores, save_plot=save_plot, save_path='plots',
                  filename=f'training_progress_game_{agent.n_games}.png')
-
-            # Decaimiento fijo de epsilon al finalizar cada juego
-            agent.epsilon = max(agent.final_epsilon, agent.epsilon - agent.epsilon_step)
 
             print(f'Game #{agent.n_games}')
             if agent.n_games % 10 == 0:
