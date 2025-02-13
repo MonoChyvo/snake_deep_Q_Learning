@@ -12,6 +12,7 @@ venv/
 # Ignorar resultados temporales o de análisis
 results/
 plots/
+SEGUIMIENTO/
 
 # Ignorar archivos de sistema
 .DS_Store

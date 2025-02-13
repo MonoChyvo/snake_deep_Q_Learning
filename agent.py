@@ -1,4 +1,16 @@
-from agent_imports import *
+import torch
+import random
+import numpy as np
+from collections import deque
+from game import SnakeGameAI, Direction, Point
+from model import Linear_QNet, QTrainer
+from helper import plot
+import os
+import pickle
+from colorama import Fore, Style
+from tabulate import tabulate
+import pandas as pd
+from datetime import datetime
 
 def save_memory(memory, file_name='memory.pkl'):
     with open(file_name, 'wb') as f:
@@ -151,7 +163,7 @@ def train():
     while True:
         state_old = agent.get_state(game)
         final_move = agent.get_action(state_old)
-        reward, done, score = game.play_step(final_move)
+        reward, done, score = game.play_step(final_move, agent.n_games, record)
         state_new = agent.get_state(game)
 
         agent.train_short_memory(state_old, final_move, reward, state_new, done)
@@ -220,8 +232,8 @@ def train():
             if agent.n_games % 100 == 0:
                 df_game_results = pd.DataFrame(agent.game_results)
                 df_checkpoint_results = pd.DataFrame(agent.checkpoint_results)
-                df_game_results.to_csv('model/game_results.csv', index=False)
-                df_checkpoint_results.to_csv('model/checkpoint_results.csv', index=False)
+                df_game_results.to_csv('results/game_results.csv', index=False)
+                df_checkpoint_results.to_csv('results/checkpoint_results.csv', index=False)
 
 if __name__ == '__main__':
     train()
