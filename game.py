@@ -29,9 +29,11 @@ SPEED = 120
 
 class SnakeGameAI:
     
-    def __init__(self, width=1280, height=720):
+    def __init__(self, width=640, height=480, n_game=0, record=0):
         self.width = width
         self.height = height
+        self.n_game = n_game
+        self.record = record
         
         # Inicializar ventana del juego
         self.display = pygame.display.set_mode((self.width, self.height))
@@ -66,7 +68,9 @@ class SnakeGameAI:
             if self.food not in self.snake:
                 break
         
-    def play_step(self, action):
+    def play_step(self, action, n_game, record):
+        self.n_game = n_game
+        self.record = record
         self.frame_iteration += 1
         
         # Procesar eventos de salida
@@ -125,9 +129,15 @@ class SnakeGameAI:
         
         pygame.draw.rect(self.display, RED, pygame.Rect(self.food.x, self.food.y, BLOCK_SIZE, BLOCK_SIZE))
         
-        # Mostrar puntaje
+        # Mostrar datos
         score_text = font.render(f"Score: {self.score}", True, WHITE)
+        n_game_text = font.render(f"Game: {self.n_game}", True, WHITE)
+        record_text = font.render(f"Record: {self.record}", True, WHITE)
+
         self.display.blit(score_text, [0, 0])
+        self.display.blit(n_game_text, [0, 30])
+        self.display.blit(record_text, [0, 60])
+        
         pygame.display.flip()
         
     def _move(self, action):
