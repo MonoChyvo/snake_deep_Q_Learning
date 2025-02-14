@@ -270,9 +270,6 @@ def train():
             if agent.n_games % 100 == 0:
                 df_game_results = pd.DataFrame(agent.game_results)
                 df_game_results.to_csv('results/game_results.csv', index=False)
-                
-                df_checkpoint_results = pd.DataFrame(agent.checkpoint_results)
-                df_checkpoint_results.to_csv('results/checkpoint_results.csv', index=False)
 
 if __name__ == '__main__':
     train()
