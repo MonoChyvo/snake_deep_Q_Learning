@@ -13,6 +13,8 @@ venv/
 results/
 plots/
 SEGUIMIENTO/
+model/
+runs/
 
 # Ignorar archivos de sistema
 .DS_Store
