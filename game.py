@@ -42,6 +42,7 @@ class SnakeGameAI:
         self.reset()
         
     def reset(self):
+        self.steps = 0
         # Inicializar el estado del juego
         self.direction = Direction.RIGHT
         
@@ -69,6 +70,7 @@ class SnakeGameAI:
                 break
         
     def play_step(self, action, n_game, record):
+        self.steps += 1
         self.n_game = n_game
         self.record = record
         self.frame_iteration += 1

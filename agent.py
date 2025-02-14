@@ -1,78 +1,121 @@
+import os
 import torch
-import torch.nn.functional as F
+import pickle
 import random
 import numpy as np
-from collections import deque
-from game import SnakeGameAI, Direction, Point
-from model import Linear_QNet, QTrainer
-from helper import plot
-import os
-import pickle
-from colorama import Fore, Style
-from tabulate import tabulate
 import pandas as pd
+from helper import plot
+from collections import deque
+from tabulate import tabulate
 from datetime import datetime
+from model import DQN, QTrainer
+from colorama import Fore, Style
+from game import SnakeGameAI, Direction, Point
+from torch.utils.tensorboard import SummaryWriter
 
 def save_memory(memory, file_name='memory.pkl'):
     with open(file_name, 'wb') as f:
         pickle.dump(memory, f)
     print(f"Replay memory saved to {file_name}.")
 
-def load_memory(file_name='memory.pkl'):
+def load_memory(file_name='./model/memory.pkl'):
     with open(file_name, 'rb') as f:
         memory = pickle.load(f)
-    print(f"Replay memory loaded from {file_name}.")
+    print(Fore.MAGENTA + f"Replay memory loaded from {file_name}.\n" + Style.RESET_ALL)
     return memory
 
 MAX_MEMORY = 100_000
-BATCH_SIZE = 128  # Reduced batch size for better training stability
+BATCH_SIZE = 1000
 LR = 0.002
+GAMMA = 0.99
+TAU = 0.005  # Soft update parameter
+
+class PrioritizedReplayMemory:
+    def __init__(self, capacity, alpha=0.6):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.memory = []
+        self.priorities = np.zeros((capacity,), dtype=np.float32)
+        self.position = 0
+
+    def push(self, state, action, reward, next_state, done):
+        max_priority = self.priorities.max() if self.memory else 1.0
+        if len(self.memory) < self.capacity:
+            self.memory.append((state, action, reward, next_state, done))
+        else:
+            self.memory[self.position] = (state, action, reward, next_state, done)
+        self.priorities[self.position] = max_priority
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size, beta=0.4):
+        if len(self.memory) == self.capacity:
+            priorities = self.priorities
+        else:
+            priorities = self.priorities[:self.position]
+        probabilities = priorities ** self.alpha
+        probabilities /= probabilities.sum()
+
+        indices = np.random.choice(len(self.memory), batch_size, p=probabilities)
+        samples = [self.memory[idx] for idx in indices]
+
+        total = len(self.memory)
+        weights = (total * probabilities[indices]) ** (-beta)
+        weights /= weights.max()
+        weights = np.array(weights, dtype=np.float32)
+
+        batch = list(zip(*samples))
+        return batch, indices, weights
+
+    def update_priorities(self, batch_indices, batch_priorities):
+        for idx, priority in zip(batch_indices, batch_priorities):
+            self.priorities[idx] = priority
 
 class Agent:
     def __init__(self):
         self.n_games = 0
-        self.epsilon = 1.0  # Initial exploration rate
-        self.initial_epsilon = 1.0
-        self.final_epsilon = 0.01
-        self.epsilon_decay_steps = 1000
-        self.epsilon_step = (self.initial_epsilon - self.final_epsilon) / self.epsilon_decay_steps
-        self.gamma = 0.99
+        self.gamma = GAMMA
 
-        self.memory = deque(maxlen=MAX_MEMORY)
-        self.model = Linear_QNet(11, 256, 3)
-        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
+        self.memory = PrioritizedReplayMemory(MAX_MEMORY)
+        self.model = DQN(11, 256, 3)
+        self.target_model = DQN(11, 256, 3)
+        self.target_model.load_state_dict(self.model.state_dict())
+        self.target_model.eval()
+        self.trainer = QTrainer(self.model, self.target_model, lr=LR, gamma=self.gamma)
 
-        # Contadores de acciones
-        self.exploration_count = 0  # Explorations in the current game
-        self.exploitation_count = 0  # Explotaciones en el juego actual
-        self.global_exp = 0          # Exploraciones globales
-        self.global_expl = 0         # Explotaciones globales
+        # Boltzmann exploration parameters
+        self.temperature = 0.3
 
-        # Parámetros de decaimiento adaptativo de epsilon
-        self.last_record_game = 0
-        self.max_epsilon = 0.1
-        self.adaptive_increase_factor = 1.5
-        self.stuck_threshold = 50
-
-        # Almacenamiento de datos
+        # Initialize game results list
         self.game_results = []
-        self.checkpoint_results = []
 
     def save_checkpoint(self, file_name='checkpoint.pth'):
-        self.model.save(file_name, optimizer=self.trainer.optimizer, n_games=self.n_games, epsilon=self.epsilon)
-        save_memory(self.memory, 'model/memory.pkl')
-        print(f"Agent checkpoint saved to {file_name}.\n")
-        print(f"Global Explorations: {self.global_exp}\nGlobal Exploitations: {self.global_expl}")
+        model_folder_path = './model'
+        if not os.path.exists(model_folder_path):
+            os.makedirs(model_folder_path)
+        file_path = os.path.join(model_folder_path, file_name)
+        
+        checkpoint = {
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.trainer.optimizer.state_dict(),
+            'n_games': self.n_games,
+        }
+        torch.save(checkpoint, file_path)
+        save_memory(self.memory, os.path.join(model_folder_path, 'memory.pkl'))
+        print(f"Agent checkpoint saved to {file_path}.\n")
 
-    def load_checkpoint(self, file_name='checkpoint.pth'):
-        n_games, epsilon = self.model.load(file_name, optimizer=self.trainer.optimizer)
-        self.n_games = n_games
-        self.epsilon = epsilon
-        print(f"Loaded checkpoint from game {self.n_games} with epsilon={self.epsilon:.4f}.")
+    def load_checkpoint(self, checkpoint):
+        print(Fore.GREEN + f"Loading checkpoint from {checkpoint}...\n" + Style.RESET_ALL)
+
+        checkpoint = torch.load(checkpoint)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.n_games = checkpoint.get('n_games', 0)
+        print(Fore.RED + f"Loaded checkpoint from game {self.n_games}\n" + Style.RESET_ALL)
+        
         try:
-            self.memory = load_memory('model/memory.pkl')
+            self.memory = load_memory()
         except FileNotFoundError:
-            print("Replay memory file not found. Starting with an empty memory.")
+            print(Fore.MAGENTA + "Replay memory file not found. Starting with an empty memory.\n" + Style.RESET_ALL)
             self.memory = deque(maxlen=MAX_MEMORY)
 
     def get_state(self, game):
@@ -86,24 +129,24 @@ class Agent:
         dir_u = game.direction == Direction.UP
         dir_d = game.direction == Direction.DOWN
         state = [
-            # Peligro en línea recta
+            # Danger straight
             (dir_r and game.is_collision(point_r)) or
             (dir_l and game.is_collision(point_l)) or
             (dir_u and game.is_collision(point_u)) or
             (dir_d and game.is_collision(point_d)),
-            # Peligro a la derecha
+            # Danger right
             (dir_u and game.is_collision(point_r)) or
             (dir_d and game.is_collision(point_l)) or
             (dir_l and game.is_collision(point_u)) or
             (dir_r and game.is_collision(point_d)),
-            # Peligro a la izquierda
+            # Danger left
             (dir_d and game.is_collision(point_r)) or
             (dir_u and game.is_collision(point_l)) or
             (dir_r and game.is_collision(point_u)) or
             (dir_l and game.is_collision(point_d)),
-            # Dirección de movimiento
+            # Move direction
             dir_l, dir_r, dir_u, dir_d,
-            # Ubicación de la comida
+            # Food location
             game.food.x < head.x,
             game.food.x > head.x,
             game.food.y < head.y,
@@ -112,45 +155,45 @@ class Agent:
         return np.array(state, dtype=int)
 
     def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+        self.memory.push(state, action, reward, next_state, done)
 
     def train_long_memory(self):
-        mini_sample = random.sample(self.memory, BATCH_SIZE) if len(self.memory) > BATCH_SIZE else self.memory
-        states, actions, rewards, next_states, dones = zip(*mini_sample)
-        self.trainer.train_step(states, actions, rewards, next_states, dones)
+        if len(self.memory.memory) < BATCH_SIZE:
+            return
+        mini_sample, indices, weights = self.memory.sample(BATCH_SIZE)
+        states, actions, rewards, next_states, dones = mini_sample
+
+        # Convert actions from one-hot to indices
+        actions = np.array([np.argmax(a) for a in actions])  # new
+
+        states = np.array(states)
+        rewards = np.array(rewards)
+        next_states = np.array(next_states)
+        dones = np.array(dones)
+        weights = np.array(weights)
+
+        loss = self.trainer.train_step(states, actions, rewards, next_states, dones, weights)
+        priorities = np.full(len(indices), loss + 1e-5, dtype=np.float32)
+        self.memory.update_priorities(indices, priorities)
 
     def train_short_memory(self, state, action, reward, next_state, done):
-        self.trainer.train_step(state, action, reward, next_state, done)
+        # Convert one-hot action to index
+        action_idx = np.argmax(action)  # new
+        weights = np.ones((1,), dtype=np.float32)
+        self.trainer.train_step(state, action_idx, reward, next_state, done, weights)
 
     def get_action(self, state):
-        # If the agent has not improved for a certain number of games, increase epsilon
-        if self.n_games - self.last_record_game > self.stuck_threshold:
-            self.epsilon = min(self.max_epsilon, self.epsilon * self.adaptive_increase_factor)
-            print(f"Agent is stuck! Increasing epsilon to {self.epsilon:.4f}.")
-            self.last_record_game = self.n_games
-        else:
-            # Continue the normal epsilon decay process
-            self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_step)
-
-        final_move = [0, 0, 0]
         state_tensor = torch.tensor(state, dtype=torch.float)
-        prediction = self.model(state_tensor)
-
-        if random.random() < self.epsilon:
-            # Boltzmann exploration
-            probabilities = F.softmax(prediction / self.epsilon, dim=0)
-            move = torch.multinomial(probabilities, 1).item()
-            final_move[move] = 1
-            self.exploration_count += 1
-            self.global_exp += 1
-        else:
-            # Exploitation
-            move = torch.argmax(prediction).item()
-            final_move[move] = 1
-            self.exploitation_count += 1
-            self.global_expl += 1
-
+        q_values = self.model(state_tensor).detach().numpy()
+        probabilities = np.exp(q_values / self.temperature) / np.sum(np.exp(q_values / self.temperature))
+        action = np.random.choice(len(q_values), p=probabilities)
+        final_move = [0, 0, 0]
+        final_move[action] = 1
         return final_move
+
+    def update_target_network(self):
+        for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
+            target_param.data.copy_(TAU * param.data + (1.0 - TAU) * target_param.data)
 
 def train():
     plot_scores = []
@@ -160,15 +203,17 @@ def train():
     agent = Agent()
     game = SnakeGameAI()
 
-    checkpoint_file = 'checkpoint.pth'
-    checkpoint_path = os.path.join('./model', checkpoint_file)
+    checkpoint_path = './model/checkpoint.pth'
+    print(Fore.CYAN + f"\nCheckpoint path: {checkpoint_path}\n" + Style.RESET_ALL)
+
     if os.path.exists(checkpoint_path):
-        agent.load_checkpoint(checkpoint_file)
-        print(f"Resuming training from game {agent.n_games}.")
-        print(f"Epsilon value: {agent.epsilon:.4f}")
-        print("Model state loaded successfully.")
+        agent.load_checkpoint(checkpoint_path)
+        print(Fore.YELLOW + f"Resuming training from game {agent.n_games}.\n" + Style.RESET_ALL)
+        print(Fore.GREEN + "Model state loaded successfully.\n" + Style.RESET_ALL)
     else:
         print("No checkpoint found. Starting training from scratch.")
+
+    writer = SummaryWriter('runs/snake_training')
 
     while True:
         state_old = agent.get_state(game)
@@ -183,20 +228,16 @@ def train():
             game.reset()
             agent.n_games += 1
             agent.train_long_memory()
+            agent.update_target_network()
 
             if score > record:
                 record = score
                 agent.model.save()
-                agent.last_record_game = agent.n_games  # Update last_record_game here
-                print(f"New record achieved! Resetting epsilon to {agent.final_epsilon:.4f}.")
+                agent.last_record_game = agent.n_games
 
-            # Store results of the current game
             timestamp = datetime.now()
             agent.game_results.append({
                 'game': agent.n_games,
-                'epsilon': agent.epsilon,
-                'exploration': agent.exploration_count,
-                'exploitation': agent.exploitation_count,
                 'score': score,
                 'record': record,
                 'timestamp': timestamp
@@ -205,16 +246,9 @@ def train():
             table_data = [
                 [Fore.RED + "Game" + Style.RESET_ALL, agent.n_games],
                 [Fore.GREEN + "Score" + Style.RESET_ALL, score],
-                [Fore.YELLOW + "Record" + Style.RESET_ALL, record],
-                [Fore.BLUE + "Epsilon" + Style.RESET_ALL, f"{agent.epsilon:.4f}"],
-                [Fore.MAGENTA + "Explorations" + Style.RESET_ALL, agent.exploration_count],
-                [Fore.MAGENTA + "Exploitations" + Style.RESET_ALL, agent.exploitation_count]
+                [Fore.YELLOW + "Record" + Style.RESET_ALL, record]
             ]
             print(tabulate(table_data, tablefmt="fancy_grid"))
-
-            # Reset counters for the next game
-            agent.exploration_count = 0
-            agent.exploitation_count = 0
 
             plot_scores.append(score)
             total_score += score
@@ -222,25 +256,22 @@ def train():
             plot_mean_scores.append(mean_score)
 
             save_plot = (agent.n_games % 100 == 0)
-            plot(plot_scores, plot_mean_scores, save_plot=save_plot, save_path='plots',
-                 filename=f'training_progress_game_{agent.n_games}.png')
+            plot(plot_scores, plot_mean_scores, save_plot=save_plot, save_path='plots', filename=f'training_progress_game_{agent.n_games}.png')
 
-            print(f'Game #{agent.n_games}')
+            writer.add_scalar('Score', score, agent.n_games)
+            writer.add_scalar('Mean Score', mean_score, agent.n_games)
+            writer.add_scalar('Temperature', agent.temperature, agent.n_games)
+            writer.add_scalar('Steps per Game', game.steps, agent.n_games)
+            writer.add_scalar('Cumulative Reward', total_score, agent.n_games)
+
             if agent.n_games % 10 == 0:
                 agent.save_checkpoint()
-                agent.checkpoint_results.append({
-                    'games_range': f"{agent.n_games - 9}-{agent.n_games}",
-                    'epsilon': agent.epsilon,
-                    'gamma': agent.gamma,
-                    'LR': LR,
-                    'total_exploration': sum(res['exploration'] for res in agent.game_results[-10:]),
-                    'total_exploitation': sum(res['exploitation'] for res in agent.game_results[-10:]),
-                })
 
             if agent.n_games % 100 == 0:
                 df_game_results = pd.DataFrame(agent.game_results)
-                df_checkpoint_results = pd.DataFrame(agent.checkpoint_results)
                 df_game_results.to_csv('results/game_results.csv', index=False)
+                
+                df_checkpoint_results = pd.DataFrame(agent.checkpoint_results)
                 df_checkpoint_results.to_csv('results/checkpoint_results.csv', index=False)
 
 if __name__ == '__main__':

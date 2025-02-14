@@ -17,10 +17,9 @@ def plot(scores, mean_scores, save_plot=False, save_path='plots', filename='trai
     plt.text(len(mean_scores)-1, mean_scores[-1], str(mean_scores[-1]))
     
     if save_plot:
-        # Ensure the directory exists
         os.makedirs(save_path, exist_ok=True)
         full_path = os.path.join(save_path, filename)
-        plt.savefig(full_path)  # Save the plot as an image file
+        plt.savefig(full_path)
         print(f"Plot saved to {full_path}.")
     
     plt.show(block=False)
