@@ -25,10 +25,10 @@ def load_memory(file_name='./model/memory.pkl'):
     return memory
 
 MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
-LR = 0.002
-GAMMA = 0.99
-TAU = 0.005  # Soft update parameter
+LR = 0.001           # Reducir la tasa de aprendizaje
+GAMMA = 0.95         # Cambiar el factor de descuento para recompensas futuras
+BATCH_SIZE = 500     # Reducir o aumentar según experimentación
+TAU = 0.005          # Parámetro de actualización suave
 
 class PrioritizedReplayMemory:
     def __init__(self, capacity, alpha=0.6):
@@ -83,7 +83,7 @@ class Agent:
         self.trainer = QTrainer(self.model, self.target_model, lr=LR, gamma=self.gamma)
 
         # Boltzmann exploration parameters
-        self.temperature = 0.3
+        self.temperature = 1.0
 
         # Initialize game results list
         self.game_results = []
@@ -163,9 +163,7 @@ class Agent:
         mini_sample, indices, weights = self.memory.sample(BATCH_SIZE)
         states, actions, rewards, next_states, dones = mini_sample
 
-        # Convert actions from one-hot to indices
-        actions = np.array([np.argmax(a) for a in actions])  # new
-
+        actions = np.array([np.argmax(a) for a in actions])
         states = np.array(states)
         rewards = np.array(rewards)
         next_states = np.array(next_states)
@@ -194,6 +192,10 @@ class Agent:
     def update_target_network(self):
         for target_param, param in zip(self.target_model.parameters(), self.model.parameters()):
             target_param.data.copy_(TAU * param.data + (1.0 - TAU) * target_param.data)
+    
+    def update_temperature(self, decay_rate, min_temperature):
+        # Actualiza la temperatura con decaimiento exponencial
+        self.temperature = max(self.temperature * decay_rate, min_temperature)
 
 def train():
     plot_scores = []
@@ -230,6 +232,12 @@ def train():
             agent.train_long_memory()
             agent.update_target_network()
 
+            # Actualización de la temperatura
+            agent.update_temperature(0.995, 0.1)
+
+            
+                
+
             if score > record:
                 record = score
                 agent.model.save()
@@ -246,7 +254,8 @@ def train():
             table_data = [
                 [Fore.RED + "Game" + Style.RESET_ALL, agent.n_games],
                 [Fore.GREEN + "Score" + Style.RESET_ALL, score],
-                [Fore.YELLOW + "Record" + Style.RESET_ALL, record]
+                [Fore.YELLOW + "Record" + Style.RESET_ALL, record],
+                [Fore.BLUE + "Temperature" + Style.RESET_ALL, f"{agent.temperature:.4f}"]
             ]
             print(tabulate(table_data, tablefmt="fancy_grid"))
 
@@ -266,6 +275,7 @@ def train():
 
             if agent.n_games % 10 == 0:
                 agent.save_checkpoint()
+                
 
             if agent.n_games % 100 == 0:
                 df_game_results = pd.DataFrame(agent.game_results)
