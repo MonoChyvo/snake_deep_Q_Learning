@@ -1,0 +1,7 @@
+torch
+numpy
+pygame
+pandas
+matplotlib
+colorama
+tabulate
