@@ -19,3 +19,4 @@ runs/
 # Ignorar archivos de sistema
 .DS_Store
 Thumbs.db
+snake_QDL-main.code-workspace
