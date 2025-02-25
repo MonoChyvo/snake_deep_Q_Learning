@@ -15,6 +15,7 @@ plots/
 SEGUIMIENTO/
 model/
 runs/
+TO_DO.txt
 
 # Ignorar archivos de sistema
 .DS_Store
