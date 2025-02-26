@@ -8,7 +8,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from colorama import Fore, Style
 
-# Configurar logging si aún no se ha configurado
+# Configure logging if it has not been set up
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -27,7 +27,7 @@ class DQN(nn.Module):
         return x
 
     def save(self, file_name, folder_path='./model_Model', n_games=0, optimizer=None, loss=None, last_record_game=None):
-        # Crea el directorio si no existe
+        # Creates the directory if it does not exist
         os.makedirs(folder_path, exist_ok=True)
         checkpoint = {
             'n_games': n_games,

@@ -90,6 +90,7 @@ class SnakeGameAI:
 
         reward: int = 0
         game_over: bool = False
+        
         if self.is_collision() or self.frame_iteration > 90 * len(self.snake):
             game_over = True
             reward = -10

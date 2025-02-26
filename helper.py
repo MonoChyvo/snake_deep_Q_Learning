@@ -65,7 +65,7 @@ def update_plots(agent, score, total_score, plot_scores, plot_mean_scores):
 def save_checkpoint(agent, loss):
     # Guarda el modelo (checkpoint) incluyendo algunos estados del entrenamiento
     agent.model.save(
-        "model_MARK_VII-2.pth",
+        "model_MARK_VII.pth",
         n_games=agent.n_games,
         optimizer=agent.trainer.optimizer.state_dict(),
         loss=loss,
