@@ -1,18 +1,15 @@
 import torch
 import numpy as np
-# import pandas as pd
 from helper import *
-from collections import deque
-from datetime import datetime
 from model import DQN, QTrainer
 from colorama import Fore, Style
 from game import SnakeGameAI, Direction, Point
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-MAX_MEMORY = 100_000  # Larger memory for better experience diversity
-LR = 0.0005  # Smaller learning rate for more stable training
-GAMMA = 0.99  # Higher discount factor to value future rewards more
+MAX_MEMORY = 150_000  # Larger memory for better experience diversity
+LR = 0.0003  # Smaller learning rate for more stable training
+GAMMA = 0.99  # Higher discount factor to better value future rewards
 BATCH_SIZE = 512  # Larger batch size for better gradient estimates
 TAU = 0.001  # Slower target network updates for stability
 
@@ -61,7 +58,7 @@ class Agent:
         self.model = DQN(11, 256, 3).to(device)
         self.target_model = DQN(11, 256, 3).to(device)
 
-        n_games_loaded, _, _, last_recorded_game = self.model.load("model_MARK_VII.pth") #TODO: que hace esta funcion 1.1 partir de aqui
+        n_games_loaded, _, _, last_recorded_game = self.model.load("model_MARK_VII.pth")  # TODO: explain what this function does (from version 1.1 onward)
         
         self.n_games = n_games_loaded
         self.last_record_game = last_recorded_game
@@ -136,7 +133,7 @@ class Agent:
         priorities = np.full(len(indices), loss + 1e-5, dtype=np.float32)
         self.memory.update_priorities(indices, priorities)
 
-        return loss  # Se retorna el valor de loss
+        return loss  # Return the loss value
 
     def train_short_memory(self, state, action, reward, next_state, done):
         action_idx = np.array([np.argmax(action)])
@@ -185,22 +182,22 @@ def train(max_games: int) -> None:
             game.reset()
             agent.n_games += 1
 
-            # Entrenamiento a largo plazo y captura de loss
+            # Long term training and capturing loss
             loss = agent.train_long_memory()
             save_checkpoint(agent, loss)
 
-            # Calcular estadísticas de recompensa del juego actual
+            # Calculate reward statistics for the current game
             episode_reward = sum(game.reward_history)
             avg_reward = episode_reward / len(game.reward_history) if game.reward_history else 0
 
             if score > record:
                 record = score
                 agent.last_record_game = agent.n_games 
-                print(Fore.GREEN + f"Nuevo récord en la partida {agent.last_record_game}!" + Style.RESET_ALL)
+                print(Fore.GREEN + f"New record at game {agent.last_record_game}!" + Style.RESET_ALL)
 
             total_score = update_plots(agent, score, total_score, plot_scores, plot_mean_scores)
             
-            # funciones auxiliares para imprimir información
+            # Auxiliary functions to print information
             print(Fore.YELLOW + f"Game #{agent.n_games} ended with loss: {loss}" + Style.RESET_ALL)
             print(Fore.MAGENTA + f"Game {agent.n_games} - Total Reward: {episode_reward}, Avg Reward: {avg_reward:.2f}" + Style.RESET_ALL)
             print_weight_norms(agent)
@@ -209,9 +206,9 @@ def train(max_games: int) -> None:
             
             # Terminate training if max_games reached
             if agent.n_games >= max_games:
-                print(Fore.GREEN + "Training complete." + Style.RESET_ALL)
+                print(Fore.GREEN + "            Training complete." + Style.RESET_ALL)
                 break
 
 
 if __name__ == "__main__":
-    train(max_games=2)
+    train(max_games=1000)

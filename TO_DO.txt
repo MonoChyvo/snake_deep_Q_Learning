@@ -1,0 +1,15 @@
+TODO_01:
+ajustar los parametros (temperatura creo?) si la distancia absoluta entre el juego actual y el ultimo record logrado: 
+1. rectificar cuales valores se pueden ir ajustando mediante este criterio "distancia absoluta".
+2. registro del historial de todas las veces que se alcanzo un nuevo record.
+3. como se le llama al conjunto de epochs ejecutados (1000).
+
+TODO_02: 
+Learning Rate (Tasa de aprendizaje): Ajustar la velocidad de actualización de los pesos para facilitar la convergencia o evitar saltos grandes.
+Discount Factor (Gamma): Determina la importancia de las futuras recompensas; se puede modular si se evidencia que las decisiones a corto o largo plazo están afectadas.
+Exploration Rate (Epsilon en estrategias ε-greedy): Para balancear la exploración y explotación según el desempeño actual.
+Tamaño y frecuencia del Replay Buffer: Modificar la cantidad o la frecuencia de muestreos de experiencias pasadas cuando la diferencia es significativa.
+Batch Size: La cantidad de muestras para cada actualización, pudiendo ajustarlo para refinar la estabilidad del entrenamiento.
+Update Frequency (Frecuencia de actualización de la red objetivo): Especialmente en algoritmos DQN, para sincronizar la red objetivo con la red principal.
+Reward Scaling/Clipping: Ajustar la forma en que se escalan o limitan las recompensas en función de la distancia del desempeño.
+Parámetros de regularización: Como el dropout o la regularización L2 para evitar sobreajustes en función de la variabilidad en el desempeño.
